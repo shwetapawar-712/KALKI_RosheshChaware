@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dynamic Object Detection with Lock</title>
+<style>
+body { margin:0; padding:0; background:#121212; color:#fff; font-family:Arial; display:flex; justify-content:center; align-items:flex-start; height:100vh;}
+.container { margin-top:20px; }
+.camera-card { position:relative; width:400px; height:300px; border:2px solid #0ff; border-radius:10px; overflow:hidden; }
+video, canvas { width:100%; height:100%; border-radius:10px; }
+.controls { display:flex; justify-content:space-between; margin-top:10px; }
+button { flex:1; margin:0 5px; padding:8px; font-weight:bold; border:none; border-radius:5px; cursor:pointer; }
+#startBtn { background:#28a745; color:#fff; }
+#stopBtn { background:#dc3545; color:#fff; }
+.dashboard { margin-top:10px; background:#222; padding:8px; border-radius:6px; text-align:center; }
+</style>
+</head>
+<body>
+
+<div class="container">
+    <div class="camera-card">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+    </div>
+    <div class="controls">
+        <button id="startBtn">Start Camera</button>
+        <button id="stopBtn">Stop Camera</button>
+    </div>
+    <div class="dashboard">
+        <span id="statusText">Status: -</span>
+    </div>
+</div>
+
+<script>
+let video=document.getElementById('video');
+let overlay=document.getElementById('overlay');
+let overlayCtx=overlay.getContext('2d');
+let prevFrame=null;
+let stream=null;
+let isRunning=false;
+let motionHistory=[];
+const HISTORY_LENGTH=5; 
+let lockTimer=null; // for 5 second STOP
+
+document.getElementById('startBtn').addEventListener('click', async ()=>{
+    if(isRunning) return;
+    try{
+        stream = await navigator.mediaDevices.getUserMedia({video:{width:400,height:300}});
+        video.srcObject = stream;
+        await video.play();
+        overlay.width = video.videoWidth;
+        overlay.height = video.videoHeight;
+        isRunning = true;
+        requestAnimationFrame(processFrame);
+    } catch(err){ alert("Camera error:"+err);}
+});
+
+document.getElementById('stopBtn').addEventListener('click', ()=>{
+    isRunning=false;
+    if(stream) stream.getTracks().forEach(track=>track.stop());
+    overlayCtx.clearRect(0,0,overlay.width,overlay.height);
+    prevFrame=null;
+    motionHistory=[];
+    if(lockTimer) { clearTimeout(lockTimer); lockTimer=null; }
+    document.getElementById('statusText').innerText = "Status: -";
+});
+
+function processFrame(){
+    if(!isRunning) return;
+
+    overlayCtx.drawImage(video,0,0,overlay.width,overlay.height);
+    let currFrame = overlayCtx.getImageData(0,0,overlay.width,overlay.height);
+
+    if(prevFrame){
+        let diff=0;
+        for(let i=0;i<currFrame.data.length;i+=4){
+            let delta = Math.abs(currFrame.data[i]-prevFrame.data[i])+
+                        Math.abs(currFrame.data[i+1]-prevFrame.data[i+1])+
+                        Math.abs(currFrame.data[i+2]-prevFrame.data[i+2]);
+            if(delta>50) diff++;
+        }
+
+        let totalPixels = overlay.width*overlay.height;
+        let motionRatio = diff/totalPixels;
+
+        motionHistory.push(motionRatio);
+        if(motionHistory.length>HISTORY_LENGTH) motionHistory.shift();
+
+        let avgMotion = motionHistory.reduce((a,b)=>a+b,0)/motionHistory.length;
+
+        // Approx distance levels
+        let distanceText="Far";
+        if(avgMotion>0.03) distanceText="Very Near";
+        else if(avgMotion>0.01) distanceText="Near";
+
+        // Check if lockTimer is active
+        let statusText="";
+        if(lockTimer){
+            statusText = "Dynamic Object – STOP (locked)";
+        } else {
+            if(avgMotion>0.01){
+                statusText = "Dynamic Object – STOP";
+                // Start 5 sec lock
+                lockTimer = setTimeout(()=>{
+                    lockTimer=null; // unlock after 5 sec
+                },5000);
+            } else {
+                statusText = "Static Object – RUN";
+            }
+        }
+
+        overlayCtx.fillStyle = statusText.includes("STOP") ? "rgba(255,0,0,0.3)" : "rgba(0,255,0,0.3)";
+        overlayCtx.fillRect(0,0,overlay.width,overlay.height);
+
+        overlayCtx.fillStyle="#fff";
+        overlayCtx.font="16px Arial";
+        overlayCtx.fillText(statusText + " | Distance: " + distanceText, 10, 30);
+
+        document.getElementById('statusText').innerText = statusText + " | Distance: " + distanceText;
+    }
+
+    prevFrame=currFrame;
+    requestAnimationFrame(processFrame);
+}
+</script>
+
+</body>
+</html>
