@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -139,4 +140,147 @@ async function detectFrame() {
 </script>
 
 </body>
+=======
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Robot Camera Advanced Dashboard</title>
+<style>
+body { font-family: Arial; background:#111; color:#fff; text-align:center; margin:0; padding:20px; }
+h1 { margin-bottom:10px; }
+.container { display:inline-block; position:relative; border:2px solid #0f0; border-radius:8px; }
+video, canvas { border-radius:5px; }
+#dashboard { margin-top:10px; background:#222; padding:10px; border-radius:10px; display:inline-block; width:700px; }
+#controls button { padding:8px 15px; margin:0 8px; font-size:14px; border-radius:5px; border:none; cursor:pointer; }
+#startBtn { background-color:#28a745; color:white; }
+#stopBtn { background-color:#dc3545; color:white; }
+table { width:100%; margin-top:10px; border-collapse: collapse; color:#fff; }
+th, td { border:1px solid #555; padding:5px; font-size:14px; text-align:center; }
+th { background:#333; }
+.safe { background:green; }
+.caution { background:yellow; color:black; }
+.danger { background:red; }
+</style>
+</head>
+<body>
+
+<h1>AI Robot Camera Advanced Dashboard</h1>
+
+<div class="container">
+  <video id="video" autoplay muted playsinline width="640" height="480"></video>
+  <canvas id="overlay" width="640" height="480" style="position:absolute; top:0; left:0;"></canvas>
+</div>
+
+<div id="dashboard">
+  <div id="controls">
+    <button id="startBtn">Start Camera</button>
+    <button id="stopBtn">Stop Camera</button>
+  </div>
+  <table id="objectTable">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Object</th>
+        <th>Type</th>
+        <th>Distance (cm)</th>
+        <th>Alert</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+<script>
+let video = document.getElementById('video');
+let overlay = document.getElementById('overlay');
+let overlayCtx = overlay.getContext('2d');
+let tableBody = document.querySelector("#objectTable tbody");
+let stream, model, isRunning = false;
+
+// Calibration (approx)
+const KNOWN_WIDTH_CM = 10;  
+const FOCAL_LENGTH_PX = 600; 
+const MAX_DISTANCE_CM = 40;  
+
+// Load model
+async function loadModel() {
+    model = await cocoSsd.load();
+    console.log("Coco-SSD model loaded");
+}
+loadModel();
+
+// Start camera
+document.getElementById('startBtn').addEventListener('click', async () => {
+    if (isRunning) return;
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ video:{ width:640, height:480 } });
+        video.srcObject = stream;
+        await video.play();
+        isRunning = true;
+        detectFrame();
+    } catch(err) { alert("Camera access error: "+err); }
+});
+
+// Stop camera
+document.getElementById('stopBtn').addEventListener('click', () => {
+    isRunning = false;
+    if (stream) stream.getTracks().forEach(track => track.stop());
+    overlayCtx.clearRect(0,0,overlay.width,overlay.height);
+    tableBody.innerHTML = '';
+});
+
+// Detection loop
+async function detectFrame() {
+    if (!isRunning || !model) { requestAnimationFrame(detectFrame); return; }
+    const predictions = await model.detect(video);
+    overlayCtx.clearRect(0,0,overlay.width,overlay.height);
+    tableBody.innerHTML = '';
+
+    let index = 1;
+    predictions.forEach(pred => {
+        const [x,y,width,height] = pred.bbox;
+        const distanceCm = (KNOWN_WIDTH_CM * FOCAL_LENGTH_PX)/width;
+
+        if(distanceCm <= MAX_DISTANCE_CM){
+            // Determine object type (thin/small/normal)
+            let aspectRatio = width / height;
+            let objType = 'Normal';
+            if(aspectRatio < 0.3) objType = 'Thin';
+            else if(width*height < 2000) objType = 'Small';
+
+            // Alert level
+            let colorClass='safe', alertText='Safe';
+            if(distanceCm <= 20){ colorClass='danger'; alertText='Danger'; }
+            else if(distanceCm <=30){ colorClass='caution'; alertText='Caution'; }
+
+            // Draw bounding box
+            overlayCtx.strokeStyle = colorClass==='safe'?'green':colorClass==='caution'?'yellow':'red';
+            overlayCtx.lineWidth = 2;
+            overlayCtx.strokeRect(x,y,width,height);
+
+            // Label
+            overlayCtx.fillStyle = overlayCtx.strokeStyle;
+            overlayCtx.fillRect(x,y-18,width,18);
+            overlayCtx.fillStyle=colorClass==='caution'?'black':'white';
+            overlayCtx.font='12px Arial';
+            overlayCtx.fillText(`${pred.class} - ${distanceCm.toFixed(1)}cm (${objType})`,x+2,y-4);
+
+            // Update dashboard table
+            let row = `<tr class="${colorClass}"><td>${index}</td><td>${pred.class}</td><td>${objType}</td><td>${distanceCm.toFixed(1)}</td><td>${alertText}</td></tr>`;
+            tableBody.innerHTML += row;
+            index++;
+        }
+    });
+
+    requestAnimationFrame(detectFrame);
+}
+</script>
+
+</body>
+>>>>>>> 6c55d67d1a5502e20001d6676918290b0abf1e17
 </html>
